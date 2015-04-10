@@ -1,0 +1,107 @@
+The Final Configuration
+Situation: After several iterations, we finally have a nginx configuration to load balance and reverse proxy for our JRuby application. Our nginx server can handle serving assets locally, display a maintenance pages, proxy to upstreams, forward HTTP headers, and handle both HTTP and HTTPS requests.
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+50
+51
+52
+upstream jruby_application  {
+  server 10.0.0.2:8080 max_fails=1 fail_timeout=10s;
+  server 10.0.0.3:8080 max_fails=1 fail_timeout=10s;
+  server 10.0.0.4:8080 max_fails=1 fail_timeout=10s;
+  # and so on: server 10.0.0.x;
+}
+server {
+  listen 80;
+ 
+  access_log  /var/log/nginx/jrubyapp.example.com.access.log;
+  error_log  /var/log/nginx/jrubyapp.example.com.error.log;
+ 
+ 
+  root /var/www/html;
+  try_files /maintenance.html $uri $uri/index.html $uri.html @secure;
+ 
+  location @secure {
+    rewrite ^ https://jrubyapp.example.com permanent;
+  }
+ 
+}
+server {
+  listen 443;
+  server_name jrubyapp.example.com someotherurl.com;
+ 
+  access_log  /var/log/nginx/jrubyapp.example.com.ssl.access.log;
+  error_log  /var/log/nginx/jrubyapp.example.com.ssl.error.log;
+ 
+  root /var/www/html;
+  try_files /maintenance.html $uri $uri/index.html $uri.html @proxy;
+ 
+  if ($host != 'jrubyapp.example.com') {
+    rewrite ^/(.*)$ https://jrubyapp.example.com/$1 permanent;
+  }
+ 
+  ssl on;
+  ssl_certificate cert.crt;
+  ssl_certificate_key cert.key;
+ 
+  location @proxy {
+ 
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+ 
+    proxy_pass  http://jruby_application;
+    proxy_redirect http://jrubyapp.example.com https://jrubyapp.example.com;
+  }
+ 
+   client_max_body_size 64M;
+}
+Explanation: The above configuration is nearly identical to the one that has been built up through each of the scenarios. Notably, we’ve added a client_max_body_size directive to allow clients to upload large files through the proxy, access_log and error_log directives so that we can properly log access requests and aerrors, and a check to be sure that a client is using the correct ‘canonical url’ when accessing the application.
